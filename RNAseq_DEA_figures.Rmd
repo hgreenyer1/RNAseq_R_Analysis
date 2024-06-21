@@ -1,0 +1,121 @@
+---
+title: "RNAseq DEA figures"
+author: "Haley Greenyer"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(EnhancedVolcano)
+library(ggvenn)
+library(VennDiagram)
+library(limma)
+
+
+library(readr)
+library(openxlsx)
+
+library(ggplot2)
+library(UpSetR)
+library(pheatmap)
+library(ComplexHeatmap)
+
+source("~/RNAseq_DEA_functions.R")
+```
+
+```{r directories, include=FALSE}
+
+RNAseq_in_dir <- '/path/to/DEA_output_files/'
+
+out_dir <- '/path/for/DEA_output_files/'
+out_dir_fig <- '/path/for/Figures/'
+```
+
+```{r load DEGs, message=FALSE, warning=FALSE, include=FALSE}
+#load full normalized counts 
+#use normalized count file output from *DEA.Rmd script
+full_normCounts <- read_csv(paste(RNAseq_in_dir,'project_all_NormCounts.csv', sep = ''))
+
+row.names(full_normCounts) <- full_normCounts$input
+
+#load DESeq results for each time point (load subsets as needed)
+deg_all_full <- read_csv(paste(RNAseq_in_dir,'*_DESeqRes.csv', sep = ''))
+
+#load filtered DESeq results 
+deg_all <- read_csv(paste(RNAseq_in_dir,'*_DEGs.csv', sep = ''))
+```
+
+```{r sample correlation}
+sample_cor <- cor(as.matrix(full_normCounts[,9:ncol(full_normCounts)]))
+heatmap(sample_cor)
+```
+
+
+```{r split RNAseq DEGs, include = FALSE}
+#extract up and down-regulated genes from DESeq results 
+#RNAseq 
+up_all <- subset(deg_all, deg_all$log2FoldChange > 0)
+dwn_all <- subset(deg_all, deg_all$log2FoldChange < 0)
+```
+
+# MCF10a Degron Time Course Volcano Plots 
+```{r DE volcano volcano plots, echo=FALSE}
+#get top 10% fold change cutoffs 
+FC_all <- quantile(abs(deg_3H_full$log2FoldChange), probs=0.75, na.rm=TRUE)
+
+#get top 10% pvales 
+P_all <- quantile(deg_all_full$pvalue, probs=0.001, na.rm=TRUE)
+
+top_all <- deg_all_full[which(abs(deg_all_full$log2FoldChange) >= FC_all & deg_all_full$pvalue <= P_all),]
+
+#filter labels, remove unlabeled genes 
+top_all <- top_all[!(top_all$name == 'None'),]
+
+#Volcano Plot - alter as needed
+EnhancedVolcano(deg_all_full, lab=deg_all_full$name, selectLab = top_all$name, x='log2FoldChange', y='pvalue',title = 'DEA group tested', subtitle = 'Contrast conditions',axisLabSize = 8, pCutoff = 0.05, FCcutoff = 1, labSize = 2, titleLabSize = 12, subtitleLabSize = 10, legendLabSize = 8, legendIconSize = 4, captionLabSize = 8)  
+```
+
+```{r DEG barplots, echo=FALSE}
+#get counts of up and downregulated genes across conditions/groups
+#need multiple conditions that you're testing here and a desire to look at the overlap 
+
+#you will need to generated a dataframe containing labels and DEG up/down counts per group/condition 
+
+#barplot of up and down regulated gene counts at each time point 
+ggplot(DEA_count_df, aes(fill=de, y=value, x=group, label=value)) + geom_bar(position = 'dodge', stat='identity') + labs(title ='Project DEG Counts', y='counts', fill='Expression') + scale_fill_manual(values=c('#285fb5','#f24e4e')) + xlab('Timepoint') + ylab('')
+```
+
+```{r DEG lists, include=FALSE}
+#for looking at overlaps via upset plots, create a named list containing all groups you wish to overlap 
+upreg_list <- list('all'=dwn_all$Gene,...)
+
+downreg_list <- list('all'=up_all$Gene,...)
+```
+
+```{r DEG upset plots, echo=FALSE}
+#upset plots 
+m_up = make_comb_mat(upreg_list)
+m_dwn = make_comb_mat(downreg_list)
+
+#alter asthetics as desired 
+UpSet(m_up, comb_col = c('red','blue','black')[comb_degree(m_up)],top_annotation = upset_top_annotation(m_up, add_numbers = TRUE), right_annotation = upset_right_annotation(m_up, add_numbers = TRUE),height = unit(3.5, "cm"), width = unit(10,"cm"),comb_order = order(comb_size(m_up)))
+
+UpSet(m_dwn, comb_col = c('red','blue','black')[comb_degree(m_dwn)],top_annotation = upset_top_annotation(m_dwn, add_numbers = TRUE), right_annotation = upset_right_annotation(m_dwn, add_numbers = TRUE),height = unit(3.5, "cm"), width = unit(10,"cm"), comb_order = order(comb_size(m_dwn)))
+```
+
+```{r DEG venn diagrams, echo=FALSE}
+#the upreg and downreg lists can also be used to produce venn diagrams so long as there are max 5 groups
+ggvenn::ggvenn(upreg_list, fill_color = c("#8dd3c7", "#ffffb3", "#bebada","#fb8072", "#80b1d3"), stroke_size = 0.5, set_name_size = 5)
+ggvenn::ggvenn(downreg_list, fill_color = c("#8dd3c7", "#ffffb3", "#bebada","#fb8072", "#80b1d3"), stroke_size = 0.5, set_name_size = 5)
+
+```
+
+```{r export venn overlaps, include = FALSE}
+#export overlapping gene lists 
+export_olaps(upreg_list, out_pref = 'Project_RNAseq_upRegDEG', out_dir = out_dir)
+export_olaps(downreg_list, out_pref = 'Project_RNAseq_dwnRegDEG', out_dir = out_dir)
+```
