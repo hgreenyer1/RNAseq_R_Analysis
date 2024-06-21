@@ -1,5 +1,5 @@
 ---
-title: "MCF10A_timecourse_RNAseq"
+title: "RNAseq_DEA"
 author: "Haley Greenyer"
 date: "`r Sys.Date()`"
 output: html_document
